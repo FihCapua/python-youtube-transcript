@@ -1,11 +1,13 @@
+import asyncio
+import re
 from youtube_transcript_api import YouTubeTranscriptApi
 from transformers import pipeline
+from tqdm import tqdm
 
-def get_video_id(youtube_url):
+async def get_video_id(youtube_url):
     """
     Extracts the video ID from a YouTube URL.
     """
-    import re
     video_id = re.search(r"(?<=v=)[^&]+", youtube_url)
     if not video_id:
         video_id = re.search(r"(?<=be/)[^&]+", youtube_url)
@@ -25,25 +27,36 @@ def get_transcript(video_id):
     transcript = " ".join([entry['text'] for entry in transcript_list])
     return transcript
 
-def summarize_text(text):
+async def summarize_text(text, max_chunk_length=1024):
     """
     Summarizes the given text using a pre-trained model from Hugging Face.
     """
-    summarizer = pipeline("summarization")
-    summary = summarizer(text, max_length=200, min_length=30, do_sample=False)
-    return summary[0]['summary_text']
+    summarizer = pipeline("summarization", model="sshleifer/distilbart-cnn-12-6")
+    text_chunks = [text[i:i+max_chunk_length] for i in range(0, len(text), max_chunk_length)]
+    summaries = []
+    for chunk in tqdm(text_chunks, desc="Summarizing"):
+        summary = summarizer(chunk, max_length=200, min_length=30, do_sample=False)[0]['summary_text']
+        summaries.append(summary)
+        await asyncio.sleep(0)  # Allow other tasks to run
+    return " ".join(summaries)
 
-def main():
+async def main():
     youtube_url = input("Enter YouTube URL: ")
-    video_id = get_video_id(youtube_url)
+
+    print("Extracting video ID...")
+    video_id = await get_video_id(youtube_url)
+
+    print("Fetching transcript...")
     transcript = get_transcript(video_id)
     
     print("\nTranscript of the video:\n")
     print(transcript + "\n")
     
-    print("Summary of the video:")
-    summary = summarize_text(transcript)
+    print("Summarizing the video...")
+    summary = await summarize_text(transcript)
+
+    print("\nSummary of the video:\n")
     print(summary)
 
 if __name__ == "__main__":
-    main()
+    asyncio.run(main())
